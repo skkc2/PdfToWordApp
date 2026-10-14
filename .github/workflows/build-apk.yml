@@ -1,0 +1,39 @@
+name: Build Android APK
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate Android project from Python script
+        run: |
+          SCRIPT_PATH=$(find . -name "build_pdf_to_word_app.py" | head -n 1)
+          echo "Running generator script: $SCRIPT_PATH"
+          python3 "$SCRIPT_PATH"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Run Unit Tests and Build Debug APK
+        working-directory: ./PdfToWordApp
+        run: gradle testDebugUnitTest assembleDebug
+
+      - name: Upload Compiled APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Offline-PdfToWord-APK
+          path: PdfToWordApp/app/build/outputs/apk/debug/app-debug.apk
