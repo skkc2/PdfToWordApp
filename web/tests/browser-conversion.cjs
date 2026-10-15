@@ -166,6 +166,7 @@ async function main() {
     await offlineDownload.saveAs(offlineOutputPath);
     await page.waitForFunction(
       () => document.querySelector("#status")?.textContent.startsWith("Done."),
+      null,
       { timeout: 90000 }
     );
     execFileSync("unzip", ["-t", offlineOutputPath], { stdio: "pipe" });
