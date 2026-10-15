@@ -1,0 +1,78 @@
+name: Deploy Web App to GitHub Pages
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'web/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Fetch pinned pdf.js (no install scripts)
+        run: |
+          set -euo pipefail
+          PDFJS_VERSION=4.10.38
+          mkdir "$RUNNER_TEMP/pdfjs"
+          cd "$RUNNER_TEMP/pdfjs"
+          npm init -y > /dev/null
+          npm install --ignore-scripts --no-audit --no-fund --save-exact "pdfjs-dist@${PDFJS_VERSION}"
+          npm ls pdfjs-dist
+
+      - name: Assemble site
+        run: |
+          set -euo pipefail
+          SRC="$RUNNER_TEMP/pdfjs/node_modules/pdfjs-dist"
+          mkdir -p site/vendor
+          cp web/index.html web/app.js web/styles.css site/
+          cp "$SRC/legacy/build/pdf.min.mjs" "$SRC/legacy/build/pdf.worker.min.mjs" site/vendor/
+          cp -r "$SRC/cmaps" site/vendor/cmaps
+          cp "$SRC/LICENSE" site/vendor/LICENSE
+
+      - name: Safety checks and file fingerprints
+        run: |
+          set -euo pipefail
+          grep -q "Content-Security-Policy" site/index.html
+          if grep -Eq '(src|href)="https?:' site/index.html; then
+            echo "::error::External resource found in index.html"; exit 1
+          fi
+          if grep -Eq 'fetch\(|XMLHttpRequest|WebSocket|sendBeacon' site/app.js; then
+            echo "::error::Network call found in app.js"; exit 1
+          fi
+          echo "### Site file SHA-256" >> "$GITHUB_STEP_SUMMARY"
+          (cd site && find . -type f ! -path './vendor/cmaps/*' -exec sha256sum {} \; | sort -k2) | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
