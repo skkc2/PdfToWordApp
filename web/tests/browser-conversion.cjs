@@ -100,7 +100,8 @@ async function main() {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "pdftoword-test-"));
   try {
     const page = await browser.newPage({ acceptDownloads: true });
-    page.on("pageerror", error => { throw error; });
+    const pageErrors = [];
+    page.on("pageerror", error => pageErrors.push(error));
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     await page.waitForFunction(
       () => document.querySelector("#offline-status")?.textContent.includes("Offline app shell cached"),
@@ -147,6 +148,7 @@ async function main() {
       }
     }
     assert.equal(darkPixelsInTextArea, 0, "the background layer must not contain duplicate rasterized text");
+    assert.deepEqual(pageErrors, [], "browser page must not raise uncaught JavaScript errors");
 
     // Reload once so this page is controlled by the worker, then shut down the
     // only server. The second conversion must work from the installed cache.
@@ -172,6 +174,7 @@ async function main() {
     execFileSync("unzip", ["-t", offlineOutputPath], { stdio: "pipe" });
     const offlineParts = readStoredZip(offlineOutputPath);
     assert.match(offlineParts.get("word/document.xml").toString("utf8"), /HELLO WORLD/);
+    assert.deepEqual(pageErrors, [], "offline conversion must not raise uncaught JavaScript errors");
     console.log("Browser conversion integration passed: editable text, graphics-only background, valid DOCX and conversion after disconnecting the server.");
   } finally {
     await browser.close();
