@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: pages
+  group: pages-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -48,6 +48,8 @@ jobs:
           cp "$SRC/legacy/build/pdf.min.mjs" "$SRC/legacy/build/pdf.worker.min.mjs" site/vendor/
           cp -r "$SRC/cmaps" site/vendor/cmaps
           cp "$SRC/LICENSE" site/vendor/LICENSE
+          # Use a unique cache namespace and asset URLs for every deployed revision.
+          sed -i "s/__APP_VERSION__/${GITHUB_SHA}/g" site/index.html site/service-worker.js
 
       - name: JavaScript syntax checks
         run: |
@@ -61,7 +63,11 @@ jobs:
           grep -q "Content-Security-Policy" site/index.html
           test -f site/service-worker.js
           grep -q "serviceWorker.register" site/app.js
-          grep -q "pdftoword-offline-v2" site/service-worker.js
+          grep -q "pdftoword-offline-${GITHUB_SHA}" site/service-worker.js
+          grep -q "app.js?v=${GITHUB_SHA}" site/index.html
+          if grep -q "__APP_VERSION__" site/index.html site/service-worker.js; then
+            echo "::error::Unsubstituted application version token"; exit 1
+          fi
           if grep -Eq '(src|href)="https?:' site/index.html; then
             echo "::error::External resource found in index.html"; exit 1
           fi
