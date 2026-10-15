@@ -12,7 +12,9 @@ const CORE_ASSETS = [
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_PREFIX);
-    // Force fresh network responses during an online update instead of re-caching stale HTTP-cached scripts.\n    const requests = CORE_ASSETS.map(asset => new Request(new URL(asset, self.registration.scope), { cache: 'reload' }));\n    await cache.addAll(requests);
+    // Force fresh network responses during an online update instead of re-caching stale HTTP-cached scripts.
+    const requests = CORE_ASSETS.map(asset => new Request(new URL(asset, self.registration.scope), { cache: 'reload' }));
+    await cache.addAll(requests);
     await self.skipWaiting();
   })());
 });
