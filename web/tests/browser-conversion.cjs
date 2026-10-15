@@ -104,6 +104,7 @@ async function main() {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     await page.waitForFunction(
       () => document.querySelector("#offline-status")?.textContent.includes("Offline app shell cached"),
+      null,
       { timeout: 90000 }
     );
     await page.locator("#file").setInputFiles({
@@ -118,6 +119,7 @@ async function main() {
     await download.saveAs(outputPath);
     await page.waitForFunction(
       () => document.querySelector("#status")?.textContent.startsWith("Done."),
+      null,
       { timeout: 90000 }
     );
 
@@ -149,7 +151,7 @@ async function main() {
     // Reload once so this page is controlled by the worker, then shut down the
     // only server. The second conversion must work from the installed cache.
     await page.reload({ waitUntil: "networkidle" });
-    await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller), { timeout: 30000 });
+    await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller), null, { timeout: 30000 });
     await new Promise(resolve => server.close(resolve));
     await page.reload({ waitUntil: "domcontentloaded", timeout: 30000 });
     await page.locator("#file").setInputFiles({
