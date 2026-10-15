@@ -22,7 +22,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -63,6 +63,20 @@ jobs:
           node --check site/service-worker.js
           node --check site/docx-layout.mjs
           node --test web/tests/docx-layout.test.mjs
+
+      - name: Browser conversion integration test
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/browser-test"
+          cd "$RUNNER_TEMP/browser-test"
+          npm init -y > /dev/null
+          npm install --ignore-scripts --no-audit --no-fund --save-exact playwright@1.55.0 pngjs@7.0.0
+          PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/ms-playwright" npx playwright install --with-deps chromium
+          cd "$GITHUB_WORKSPACE"
+          NODE_PATH="$RUNNER_TEMP/browser-test/node_modules" \
+          PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/ms-playwright" \
+          SITE_DIR="$GITHUB_WORKSPACE/site" \
+            node web/tests/browser-conversion.cjs
 
       - name: Safety checks and file fingerprints
         run: |
