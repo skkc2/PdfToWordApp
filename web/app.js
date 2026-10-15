@@ -15,7 +15,7 @@ const convertBtn = document.getElementById('convert');
 const progressEl = document.getElementById('progress');
 const statusEl = document.getElementById('status');
 const visualAppendixInput = document.getElementById('visual-appendix');
-let busy = false;
+let busy = false;\nlet currentStage = 'startup';
 class UserError extends Error {}
 
 function setStatus(message, isError = false) {
