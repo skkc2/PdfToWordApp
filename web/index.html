@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Offline PDF to Word</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+    <h1>Offline PDF to Word (.docx)</h1>
+    <p class="note">Your PDF is converted inside your browser. It is never uploaded.</p>
+
+    <label class="pick" for="file">1. Select PDF file</label>
+    <input id="file" type="file" accept="application/pdf,.pdf">
+
+    <button id="convert" type="button" disabled>2. Convert &amp; download Word file</button>
+
+    <progress id="progress" max="100" value="0" hidden></progress>
+    <p id="status" role="status">Select a PDF to begin.</p>
+
+    <p class="small">Plain text only: images, tables and layout are not kept. Scanned PDFs without a text layer will come out empty. Limits: 30 MB, 300 pages.</p>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
