@@ -58,3 +58,15 @@ test("hybrid fails safe to an image if structure analysis fails", () => {
 test("unknown modes are rejected", () => {
   assert.throws(() => choosePageRepresentation("appendix", simple), TypeError);
 });
+
+test("hybrid falls back when text spans almost the full page height", () => {
+  assert.equal(choosePageRepresentation("hybrid", {
+    ...simple, pageHeightPt: 792, textVerticalSpan: 770,
+  }).representation, "image");
+});
+
+test("hybrid falls back when text reaches the page edge", () => {
+  assert.equal(choosePageRepresentation("hybrid", {
+    ...simple, pageWidthPt: 612, maxTextRightPt: 610,
+  }).representation, "image");
+});
