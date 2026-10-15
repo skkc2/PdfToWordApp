@@ -24,6 +24,12 @@ export function choosePageRepresentation(mode, metrics) {
   if (!metrics.textLength) {
     return { representation: "image", reason: "no extractable text" };
   }
+  if (metrics.textVerticalSpan > Math.max(1, (metrics.pageHeightPt || 792) - 36)) {
+    return { representation: "image", reason: "text content spans almost the full page height" };
+  }
+  if (metrics.maxTextRightPt > Math.max(1, (metrics.pageWidthPt || 612) - 12)) {
+    return { representation: "image", reason: "text reaches the page edge and may reflow" };
+  }
   if (metrics.rasterImageOps > 0) {
     return { representation: "image", reason: "page contains raster graphics" };
   }
