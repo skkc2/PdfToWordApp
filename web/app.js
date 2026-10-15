@@ -549,6 +549,7 @@ async function renderPageToPng(page, modelPage, requestedGraphicsOnly = true) {
     let fullPage = !requestedGraphicsOnly;
     let filterCalls = 0;
     let filterReceivedOperatorList = false;
+    let mappedRenderTextStyles = false;
     const renderOptions = { canvasContext: context, viewport };
 
     if (requestedGraphicsOnly) {
@@ -558,6 +559,17 @@ async function renderPageToPng(page, modelPage, requestedGraphicsOnly = true) {
           return true;
         }
         filterReceivedOperatorList = true;
+        if (!mappedRenderTextStyles) {
+          mappedRenderTextStyles = true;
+          // Use the exact list being painted. A separately requested getOperatorList()
+          // can differ from the renderer's list because PDF.js uses different intents.
+          const renderInfo = inspectOperatorList(renderOperatorList);
+          const hints = stylesForTextItems(modelPage.textItems, renderInfo.textPaintRecords);
+          modelPage.textItems.forEach((item, itemIndex) => {
+            item.color = hints[itemIndex]?.color || item.color || '000000';
+            item.hidden = hints[itemIndex]?.mode === 3 || item.hidden;
+          });
+        }
         return !textPaintOperatorIds().has(renderOperatorList.fnArray[index]);
       };
     }
