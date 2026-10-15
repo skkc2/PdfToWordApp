@@ -8,6 +8,7 @@ const CORE_ASSETS = [
   './vendor/pdf.min.mjs',
   './vendor/pdf.worker.min.mjs',
   './vendor/LICENSE',
+  './offline-assets.json',
 ];
 
 self.addEventListener('install', event => {
@@ -16,6 +17,13 @@ self.addEventListener('install', event => {
     // Force fresh network responses during an online update instead of re-caching stale HTTP-cached scripts.
     const requests = CORE_ASSETS.map(asset => new Request(new URL(asset, self.registration.scope), { cache: 'reload' }));
     await cache.addAll(requests);
+    const manifestResponse = await cache.match('./offline-assets.json');
+    if (!manifestResponse) throw new Error('Offline asset manifest is missing.');
+    const supportAssets = await manifestResponse.json();
+    if (!Array.isArray(supportAssets) || supportAssets.some(asset => typeof asset !== 'string' || !asset.startsWith('./vendor/'))) {
+      throw new Error('Offline asset manifest is invalid.');
+    }
+    await cache.addAll(supportAssets.map(asset => new Request(new URL(asset, self.registration.scope), { cache: 'reload' })));
     await self.skipWaiting();
   })());
 });
