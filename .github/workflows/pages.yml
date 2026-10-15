@@ -45,6 +45,12 @@ jobs:
           cp -r "$SRC/cmaps" site/vendor/cmaps
           cp "$SRC/LICENSE" site/vendor/LICENSE
 
+      - name: JavaScript syntax checks
+        run: |
+          set -euo pipefail
+          node --check site/app.js
+          node --check site/service-worker.js
+
       - name: Safety checks and file fingerprints
         run: |
           set -euo pipefail
