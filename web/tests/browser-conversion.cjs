@@ -145,10 +145,34 @@ async function main() {
       }
     }
     assert.equal(darkPixelsInTextArea, 0, "the background layer must not contain duplicate rasterized text");
-    console.log("Browser conversion integration passed: editable text, graphics-only background, valid DOCX and offline asset cache.");
+
+    // Reload once so this page is controlled by the worker, then shut down the
+    // only server. The second conversion must work from the installed cache.
+    await page.reload({ waitUntil: "networkidle" });
+    await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller), { timeout: 30000 });
+    await new Promise(resolve => server.close(resolve));
+    await page.reload({ waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.locator("#file").setInputFiles({
+      name: "layout-fixture.pdf",
+      mimeType: "application/pdf",
+      buffer: makeFixturePdf(),
+    });
+    const offlineDownloadPromise = page.waitForEvent("download", { timeout: 90000 });
+    await page.locator("#convert").click();
+    const offlineDownload = await offlineDownloadPromise;
+    const offlineOutputPath = path.join(temp, "converted-offline.docx");
+    await offlineDownload.saveAs(offlineOutputPath);
+    await page.waitForFunction(
+      () => document.querySelector("#status")?.textContent.startsWith("Done."),
+      { timeout: 90000 }
+    );
+    execFileSync("unzip", ["-t", offlineOutputPath], { stdio: "pipe" });
+    const offlineParts = readStoredZip(offlineOutputPath);
+    assert.match(offlineParts.get("word/document.xml").toString("utf8"), /HELLO WORLD/);
+    console.log("Browser conversion integration passed: editable text, graphics-only background, valid DOCX and conversion after disconnecting the server.");
   } finally {
     await browser.close();
-    server.close();
+    if (server.listening) server.close();
     fs.rmSync(temp, { recursive: true, force: true });
   }
 }
