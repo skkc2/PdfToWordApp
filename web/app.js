@@ -1,4 +1,5 @@
 import * as pdfjsLib from './vendor/pdf.min.mjs';
+import { choosePageRepresentation } from './conversion-layout.mjs';
 
 const MAX_PDF_BYTES = 30 * 1024 * 1024;
 const MAX_PAGES = 300;
@@ -14,7 +15,7 @@ const fileInput = document.getElementById('file');
 const convertBtn = document.getElementById('convert');
 const progressEl = document.getElementById('progress');
 const statusEl = document.getElementById('status');
-const visualAppendixInput = document.getElementById('visual-appendix');
+const modeInput = document.getElementById('conversion-mode');
 let busy = false;
 let currentStage = 'startup';
 class UserError extends Error {}
@@ -35,17 +36,17 @@ convertBtn.addEventListener('click', async () => {
   busy = true;
   convertBtn.disabled = true;
   fileInput.disabled = true;
-  visualAppendixInput.disabled = true;
+  modeInput.disabled = true;
   progressEl.hidden = false;
   progressEl.value = 0;
   setStatus('Starting local conversion…');
   try {
     currentStage = 'PDF text analysis';
     const model = await analyzePdf(file);
-    currentStage = visualAppendixInput.checked ? 'visual appendix rendering or DOCX packaging' : 'DOCX packaging';
-    const blob = await buildDocx(model, visualAppendixInput.checked, (percent, message) => {
+    currentStage = modeInput.value === 'visual' || modeInput.value === 'hybrid' ? 'page-level visual fallback or DOCX packaging' : 'DOCX packaging';
+    const blob = await buildDocx(model, modeInput.value, (percent, message) => {
       progressEl.value = percent;
-      if (message.toLowerCase().includes('rendering visual reference')) currentStage = 'visual appendix rendering';
+      if (message.toLowerCase().includes('rendering source page')) currentStage = 'page rendering';
       else if (message.toLowerCase().includes('packaging')) currentStage = 'DOCX packaging';
       setStatus(message);
     });
@@ -58,7 +59,7 @@ convertBtn.addEventListener('click', async () => {
     sourcePdfBytes = null;
     busy = false;
     fileInput.disabled = false;
-    visualAppendixInput.disabled = false;
+    modeInput.disabled = false;
     convertBtn.disabled = !(fileInput.files && fileInput.files[0]);
     progressEl.hidden = true;
   }
@@ -100,11 +101,12 @@ async function analyzePdf(file) {
     for (let n = 1; n <= pdf.numPages; n++) {
       const page = await pdf.getPage(n);
       try {
-        const [content, annotations] = await Promise.all([
+        const [content, annotations, operatorMetrics] = await Promise.all([
           page.getTextContent({ includeMarkedContent: true }),
           page.getAnnotations({ intent: 'display' }).catch(() => []),
+          inspectPageOperators(page),
         ]);
-        const model = buildPageModel(page, content, annotations);
+        const model = buildPageModel(page, content, annotations, operatorMetrics);
         totalChars += model.textLength;
         if (totalChars > MAX_TOTAL_CHARS) throw new UserError('This PDF contains too much text to convert safely.');
         pages.push(model);
@@ -117,13 +119,33 @@ async function analyzePdf(file) {
   } finally {
     await task.destroy();
   }
-  if (!pages.some(p => p.paragraphs.some(line => line.text.trim())) && !visualAppendixInput.checked) {
+  if (!pages.some(p => p.paragraphs.some(line => line.text.trim())) && modeInput.value === 'editable') {
     throw new UserError('No selectable text was found. This appears to be a scanned or image-only PDF. Enable the visual reference appendix to preserve its appearance; OCR is not included yet.');
   }
   return { pages };
 }
 
-function buildPageModel(page, content, annotations) {
+
+async function inspectPageOperators(page) {
+  try {
+    const list = await page.getOperatorList();
+    const ops = pdfjsLib.OPS || {};
+    const imageNames = ['paintImageXObject', 'paintInlineImageXObject', 'paintImageMaskXObject', 'paintImageXObjectRepeat', 'paintSolidColorImageMask'];
+    const vectorNames = ['constructPath', 'stroke', 'closeStroke', 'fill', 'eoFill', 'fillStroke', 'eoFillStroke', 'shadingFill'];
+    const imageIds = new Set(imageNames.map(name => ops[name]).filter(Number.isInteger));
+    const vectorIds = new Set(vectorNames.map(name => ops[name]).filter(Number.isInteger));
+    let rasterImageOps = 0, vectorPaintOps = 0;
+    for (const op of list.fnArray || []) {
+      if (imageIds.has(op)) rasterImageOps++;
+      if (vectorIds.has(op)) vectorPaintOps++;
+    }
+    return { rasterImageOps, vectorPaintOps, operatorListUnavailable: false };
+  } catch {
+    return { rasterImageOps: 0, vectorPaintOps: 0, operatorListUnavailable: true };
+  }
+}
+
+function buildPageModel(page, content, annotations, operatorMetrics = { operatorListUnavailable: true }) {
   const viewport = page.getViewport({ scale: 1 });
   const items = [];
   for (const item of content.items) {
@@ -166,9 +188,11 @@ function buildPageModel(page, content, annotations) {
     line.y = line.items.reduce((sum, it) => sum + it.y, 0) / line.items.length;
   }
   const paragraphs = [];
+  let wideGapLineCount = 0;
   let previousY = null;
   for (const line of lines) {
     line.items.sort((a, b) => a.x - b.x);
+    if (line.items.some((item, index) => index > 0 && item.x - (line.items[index - 1].x + line.items[index - 1].width) > 45)) wideGapLineCount++;
     const runs = [];
     let previousEnd = null;
     for (const item of line.items) {
@@ -200,6 +224,7 @@ function buildPageModel(page, content, annotations) {
     textLength: paragraphs.reduce((sum, p) => sum + p.text.length, 0),
     confidence: paragraphs.length > 2 ? 0.7 : paragraphs.length ? 0.35 : 0,
     hasAnnotations: (annotations || []).length > 0,
+    metrics: { ...operatorMetrics, textLength: paragraphs.reduce((sum, p) => sum + p.text.length, 0), textItemCount: items.length, wideGapLineCount },
   };
 }
 function median(values) {
