@@ -12,21 +12,12 @@
 <body>
   <main>
     <h1>Offline PDF to Word (.docx)</h1>
-    <p class="note">Choose how each original page should be represented. Your PDF stays on this device.</p>
+    <p class="note">Preserve the original page layout while keeping text editable where possible. Your PDF stays on this device.</p>
 
     <label class="pick" for="file">1. Select PDF file</label>
     <input id="file" type="file" accept="application/pdf,.pdf">
 
-    <fieldset class="options">
-      <legend>Output mode</legend>
-      <label class="mode-option" for="conversion-mode">Choose conversion style</label>
-      <select id="conversion-mode">
-        <option value="hybrid" selected>Hybrid — editable where reliable, image fallback for complex pages</option>
-        <option value="editable">Editable text — best-effort reconstruction on every page</option>
-        <option value="visual">Visual fidelity — each page preserved as a full-page image</option>
-      </select>
-      <p class="small mode-help">Hybrid keeps the original page count by replacing complex pages in place; it does not add a duplicate appendix. Visual mode looks closest to the PDF, but page content is not individually editable. Editable mode prioritizes editable text and may change layout.</p>
-    </fieldset>
+    <p class="small mode-help">The converter keeps original page artwork and places editable text at the corresponding page coordinates. If a page uses text clipping, rotated or complex text, or an unsupported structure, that page is preserved as a full-page image to avoid a misleading conversion.</p>
 
     <button id="convert" type="button" disabled>2. Convert &amp; download Word file</button>
 
