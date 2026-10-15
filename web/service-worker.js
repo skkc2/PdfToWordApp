@@ -1,9 +1,9 @@
-const CACHE_PREFIX = 'pdftoword-offline-v3';
+const CACHE_PREFIX = 'pdftoword-offline-__APP_VERSION__';
 const CORE_ASSETS = [
   './',
   './index.html',
-  './styles.css',
-  './app.js',
+  './styles.css?v=__APP_VERSION__',
+  './app.js?v=__APP_VERSION__',
   './vendor/pdf.min.mjs',
   './vendor/pdf.worker.min.mjs',
   './vendor/LICENSE',
