@@ -130,7 +130,8 @@ export function pageParagraphXml(page, image, options = {}) {
       parts.push(textBoxAnchorXml(item, docPrId++, page.number));
     }
   }
+  const sectPr = options.sectionProperties || "";
   const pPr = '<w:pPr><w:spacing w:before="0" w:after="0" w:line="1" w:lineRule="exact"/>' +
-    '<w:ind w:left="0" w:right="0" w:firstLine="0"/></w:pPr>';
+    '<w:ind w:left="0" w:right="0" w:firstLine="0"/>' + sectPr + '</w:pPr>';
   return { xml: '<w:p>' + pPr + parts.join("") + '</w:p>', nextDocPrId: docPrId };
 }
