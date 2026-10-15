@@ -40,7 +40,7 @@ jobs:
           set -euo pipefail
           SRC="$RUNNER_TEMP/pdfjs/node_modules/pdfjs-dist"
           mkdir -p site/vendor
-          cp web/index.html web/app.js web/styles.css site/
+          cp web/index.html web/app.js web/styles.css web/service-worker.js site/
           cp "$SRC/legacy/build/pdf.min.mjs" "$SRC/legacy/build/pdf.worker.min.mjs" site/vendor/
           cp -r "$SRC/cmaps" site/vendor/cmaps
           cp "$SRC/LICENSE" site/vendor/LICENSE
@@ -49,6 +49,9 @@ jobs:
         run: |
           set -euo pipefail
           grep -q "Content-Security-Policy" site/index.html
+          test -f site/service-worker.js
+          grep -q "serviceWorker.register" site/app.js
+          grep -q "pdftoword-offline-v2" site/service-worker.js
           if grep -Eq '(src|href)="https?:' site/index.html; then
             echo "::error::External resource found in index.html"; exit 1
           fi
