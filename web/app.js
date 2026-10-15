@@ -224,7 +224,16 @@ function buildPageModel(page, content, annotations, operatorMetrics = { operator
     textLength: paragraphs.reduce((sum, p) => sum + p.text.length, 0),
     confidence: paragraphs.length > 2 ? 0.7 : paragraphs.length ? 0.35 : 0,
     hasAnnotations: (annotations || []).length > 0,
-    metrics: { ...operatorMetrics, textLength: paragraphs.reduce((sum, p) => sum + p.text.length, 0), textItemCount: items.length, wideGapLineCount },
+    metrics: {
+      ...operatorMetrics,
+      textLength: paragraphs.reduce((sum, p) => sum + p.text.length, 0),
+      textItemCount: items.length,
+      wideGapLineCount,
+      pageWidthPt: viewport.width,
+      pageHeightPt: viewport.height,
+      textVerticalSpan: paragraphs.length ? Math.max(...paragraphs.map(p => p.y + p.fontSize)) - Math.min(...paragraphs.map(p => p.y)) : 0,
+      maxTextRightPt: items.length ? Math.max(...items.map(item => item.x + item.width)) : 0,
+    },
   };
 }
 function median(values) {
