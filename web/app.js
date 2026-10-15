@@ -16,6 +16,7 @@ const progressEl = document.getElementById('progress');
 const statusEl = document.getElementById('status');
 const visualAppendixInput = document.getElementById('visual-appendix');
 let busy = false;
+let currentStage = 'startup';
 class UserError extends Error {}
 
 function setStatus(message, isError = false) {
@@ -39,9 +40,13 @@ convertBtn.addEventListener('click', async () => {
   progressEl.value = 0;
   setStatus('Starting local conversion…');
   try {
+    currentStage = 'PDF text analysis';
     const model = await analyzePdf(file);
+    currentStage = visualAppendixInput.checked ? 'visual appendix rendering or DOCX packaging' : 'DOCX packaging';
     const blob = await buildDocx(model, visualAppendixInput.checked, (percent, message) => {
       progressEl.value = percent;
+      if (message.toLowerCase().includes('rendering visual reference')) currentStage = 'visual appendix rendering';
+      else if (message.toLowerCase().includes('packaging')) currentStage = 'DOCX packaging';
       setStatus(message);
     });
     if (blob.size > MAX_OUTPUT_BYTES) throw new UserError('The Word file exceeds the 180 MB safety limit. Disable the visual appendix and try again.');
@@ -63,7 +68,8 @@ function friendlyMessage(error) {
   if (error?.name === 'PasswordException') return "This PDF is password-protected and can't be converted.";
   if (error?.name === 'InvalidPDFException' || error?.name === 'FormatError') return 'Could not read the PDF. It may be damaged or not a valid PDF.';
   if (error instanceof RangeError) return 'Not enough memory. Try a smaller PDF or disable the visual appendix.';
-  return 'Conversion failed. The PDF may be damaged or contain unsupported content.';
+  const detail = String(error?.message || error || 'Unknown error').replace(/\s+/g, ' ').slice(0, 220);
+  return 'Conversion failed during ' + currentStage + '. ' + (error?.name ? error.name + ': ' : '') + detail;
 }
 function hasPdfHeader(bytes) {
   const limit = Math.min(bytes.length - 5, 1024);

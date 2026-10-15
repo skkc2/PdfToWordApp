@@ -1,9 +1,9 @@
-const CACHE_PREFIX = 'pdftoword-offline-v2';
+const CACHE_PREFIX = 'pdftoword-offline-__APP_VERSION__';
 const CORE_ASSETS = [
   './',
   './index.html',
-  './styles.css',
-  './app.js',
+  './styles.css?v=__APP_VERSION__',
+  './app.js?v=__APP_VERSION__',
   './vendor/pdf.min.mjs',
   './vendor/pdf.worker.min.mjs',
   './vendor/LICENSE',
@@ -12,7 +12,9 @@ const CORE_ASSETS = [
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_PREFIX);
-    await cache.addAll(CORE_ASSETS);
+    // Force fresh network responses during an online update instead of re-caching stale HTTP-cached scripts.
+    const requests = CORE_ASSETS.map(asset => new Request(new URL(asset, self.registration.scope), { cache: 'reload' }));
+    await cache.addAll(requests);
     await self.skipWaiting();
   })());
 });
