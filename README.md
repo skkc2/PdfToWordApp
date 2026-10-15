@@ -11,15 +11,13 @@ There are two versions, built from this repo:
 
 Web app: https://skkc2.github.io/PdfToWordApp/
 
-## Web converter: page-level hybrid output
+## Web converter: layout-preserving editable output
 
-The web app offers three explicit output modes:
+The web converter builds a page-sized Word layout instead of reconstructing paragraphs and appending screenshots. It renders a graphics-only layer from each PDF page and overlays individually editable Word text boxes at the original PDF text coordinates, with approximate font size, color, weight and italics. Page dimensions and orientation are retained.
 
-- **Hybrid (default):** chooses a representation per source page. Pages that appear structurally simple are reconstructed as editable Word text; pages with raster graphics, dense vector drawing, likely columns/tables, no text, uncertain structure, or likely overflow are rendered as a full-page image *in that page's position*. It does not append a duplicate image appendix.
-- **Editable text:** reconstructs text on every page. Complex layouts may reflow or lose visual elements.
-- **Visual fidelity:** renders every original page as a full-page image in a DOCX. This is the closest visual fallback, but page contents are not individually editable.
+Pages with text clipping, rotated/skewed/right-to-left text, scanned pages with invisible OCR text, or structures the renderer cannot safely separate are preserved as full-page images. These fallback pages are visually faithful but are not individually editable. For other pages, visual fidelity depends on Word's font substitution and DrawingML text-box rendering; this is a best-effort offline reconstruction, not a guarantee of pixel-identical output.
 
-Each Word section uses its source page's dimensions and orientation. Hybrid selection is heuristic and does not guarantee the exact page count or pixel-identical output for every document; a text page can still reflow in Word. The app does not yet reconstruct arbitrary PDF objects as native Word tables, vector shapes, headers/footers, or original embedded images. OCR is not included, so scanned pages are preserved visually in Hybrid/Visual mode but do not gain editable text. Password-protected PDFs are rejected.
+The converter uses the PDF.js render operator list to filter text painting from the artwork render. This requires a PDF.js version that exposes the actual render operator list to `operationsFilter`; the build pins PDF.js and tests the layout XML generation. The PDF remains in browser memory and is never uploaded. The app shell and its pinned PDF.js assets are cached for offline use after the first online load. OCR is not added by this app, and encrypted PDFs that require a password are rejected.
 
 ## Limits (both versions)
 
