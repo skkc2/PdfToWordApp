@@ -44,7 +44,7 @@ jobs:
           set -euo pipefail
           SRC="$RUNNER_TEMP/pdfjs/node_modules/pdfjs-dist"
           mkdir -p site/vendor
-          cp web/index.html web/app.js web/styles.css web/service-worker.js site/
+          cp web/index.html web/app.js web/styles.css web/service-worker.js web/conversion-layout.mjs site/
           cp "$SRC/legacy/build/pdf.min.mjs" "$SRC/legacy/build/pdf.worker.min.mjs" site/vendor/
           cp -r "$SRC/cmaps" site/vendor/cmaps
           cp "$SRC/LICENSE" site/vendor/LICENSE
@@ -56,12 +56,15 @@ jobs:
           set -euo pipefail
           node --check site/app.js
           node --check site/service-worker.js
+          node --check site/conversion-layout.mjs
+          node --test web/tests/conversion-layout.test.mjs
 
       - name: Safety checks and file fingerprints
         run: |
           set -euo pipefail
           grep -q "Content-Security-Policy" site/index.html
           test -f site/service-worker.js
+          test -f site/conversion-layout.mjs
           grep -q "serviceWorker.register" site/app.js
           grep -q "pdftoword-offline-${GITHUB_SHA}" site/service-worker.js
           grep -q "app.js?v=${GITHUB_SHA}" site/index.html
