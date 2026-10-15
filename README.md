@@ -11,14 +11,15 @@ There are two versions, built from this repo:
 
 Web app: https://skkc2.github.io/PdfToWordApp/
 
-## Web converter: hybrid reconstruction
+## Web converter: page-level hybrid output
 
-- Extracts positioned PDF.js text and reconstructs editable Word paragraphs and text runs, with approximate font family, size, bold/italic, indentation, and vertical spacing.
-- Preserves page order and page breaks. It keeps the source PDF in browser memory for optional page rendering.
-- Optional **visual reference appendix** renders each source page to an image and appends it after the editable reconstruction. These appendix images preserve appearance but are not editable text.
-- Includes a same-origin service worker to cache the application shell and locally requested assets for offline use after the site has loaded.
+The web app offers three explicit output modes:
 
-This is a reconstruction, not a pixel-perfect PDF-to-Word engine. Tables, multi-column reading order, vector shapes, original images, headers/footers, exact colors and complex typography are not yet reconstructed as native Word objects. The visual appendix is the fidelity fallback. Scanned PDFs without a text layer cannot produce editable text because OCR is not included. Password-protected PDFs are rejected.
+- **Hybrid (default):** chooses a representation per source page. Pages that appear structurally simple are reconstructed as editable Word text; pages with raster graphics, dense vector drawing, likely columns/tables, no text, uncertain structure, or likely overflow are rendered as a full-page image *in that page's position*. It does not append a duplicate image appendix.
+- **Editable text:** reconstructs text on every page. Complex layouts may reflow or lose visual elements.
+- **Visual fidelity:** renders every original page as a full-page image in a DOCX. This is the closest visual fallback, but page contents are not individually editable.
+
+Each Word section uses its source page's dimensions and orientation. Hybrid selection is heuristic and does not guarantee the exact page count or pixel-identical output for every document; a text page can still reflow in Word. The app does not yet reconstruct arbitrary PDF objects as native Word tables, vector shapes, headers/footers, or original embedded images. OCR is not included, so scanned pages are preserved visually in Hybrid/Visual mode but do not gain editable text. Password-protected PDFs are rejected.
 
 ## Limits (both versions)
 
@@ -55,6 +56,8 @@ build_pdf_to_word_app.py        Generates the whole Android project
 web/index.html                  Web app page
 web/app.js                      Web app logic (PDF reading + .docx writing)
 web/styles.css                  Web app styling
+web/conversion-layout.mjs       Page-level hybrid fallback policy
+web/tests/conversion-layout.test.mjs  Hybrid policy tests
 web/service-worker.js            Browser-only offline app-shell cache
 .github/workflows/build-apk.yml Builds, tests and checks the APK
 .github/workflows/pages.yml     Builds and deploys the web app

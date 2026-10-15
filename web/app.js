@@ -1,4 +1,5 @@
 import * as pdfjsLib from './vendor/pdf.min.mjs';
+import { choosePageRepresentation } from './conversion-layout.mjs';
 
 const MAX_PDF_BYTES = 30 * 1024 * 1024;
 const MAX_PAGES = 300;
@@ -14,7 +15,7 @@ const fileInput = document.getElementById('file');
 const convertBtn = document.getElementById('convert');
 const progressEl = document.getElementById('progress');
 const statusEl = document.getElementById('status');
-const visualAppendixInput = document.getElementById('visual-appendix');
+const modeInput = document.getElementById('conversion-mode');
 let busy = false;
 let currentStage = 'startup';
 class UserError extends Error {}
@@ -35,30 +36,30 @@ convertBtn.addEventListener('click', async () => {
   busy = true;
   convertBtn.disabled = true;
   fileInput.disabled = true;
-  visualAppendixInput.disabled = true;
+  modeInput.disabled = true;
   progressEl.hidden = false;
   progressEl.value = 0;
   setStatus('Starting local conversion…');
   try {
     currentStage = 'PDF text analysis';
     const model = await analyzePdf(file);
-    currentStage = visualAppendixInput.checked ? 'visual appendix rendering or DOCX packaging' : 'DOCX packaging';
-    const blob = await buildDocx(model, visualAppendixInput.checked, (percent, message) => {
+    currentStage = modeInput.value === 'visual' || modeInput.value === 'hybrid' ? 'page-level visual fallback or DOCX packaging' : 'DOCX packaging';
+    const blob = await buildDocx(model, modeInput.value, (percent, message) => {
       progressEl.value = percent;
-      if (message.toLowerCase().includes('rendering visual reference')) currentStage = 'visual appendix rendering';
+      if (message.toLowerCase().includes('rendering source page')) currentStage = 'page rendering';
       else if (message.toLowerCase().includes('packaging')) currentStage = 'DOCX packaging';
       setStatus(message);
     });
     if (blob.size > MAX_OUTPUT_BYTES) throw new UserError('The Word file exceeds the 180 MB safety limit. Disable the visual appendix and try again.');
     saveBlob(blob, outputName(file.name));
-    setStatus('Done. Your editable Word document was downloaded locally.');
+    setStatus('Done. Your Word document was downloaded locally.');
   } catch (error) {
     setStatus(friendlyMessage(error), true);
   } finally {
     sourcePdfBytes = null;
     busy = false;
     fileInput.disabled = false;
-    visualAppendixInput.disabled = false;
+    modeInput.disabled = false;
     convertBtn.disabled = !(fileInput.files && fileInput.files[0]);
     progressEl.hidden = true;
   }
@@ -100,11 +101,12 @@ async function analyzePdf(file) {
     for (let n = 1; n <= pdf.numPages; n++) {
       const page = await pdf.getPage(n);
       try {
-        const [content, annotations] = await Promise.all([
+        const [content, annotations, operatorMetrics] = await Promise.all([
           page.getTextContent({ includeMarkedContent: true }),
           page.getAnnotations({ intent: 'display' }).catch(() => []),
+          inspectPageOperators(page),
         ]);
-        const model = buildPageModel(page, content, annotations);
+        const model = buildPageModel(page, content, annotations, operatorMetrics);
         totalChars += model.textLength;
         if (totalChars > MAX_TOTAL_CHARS) throw new UserError('This PDF contains too much text to convert safely.');
         pages.push(model);
@@ -117,13 +119,33 @@ async function analyzePdf(file) {
   } finally {
     await task.destroy();
   }
-  if (!pages.some(p => p.paragraphs.some(line => line.text.trim())) && !visualAppendixInput.checked) {
+  if (!pages.some(p => p.paragraphs.some(line => line.text.trim())) && modeInput.value === 'editable') {
     throw new UserError('No selectable text was found. This appears to be a scanned or image-only PDF. Enable the visual reference appendix to preserve its appearance; OCR is not included yet.');
   }
   return { pages };
 }
 
-function buildPageModel(page, content, annotations) {
+
+async function inspectPageOperators(page) {
+  try {
+    const list = await page.getOperatorList();
+    const ops = pdfjsLib.OPS || {};
+    const imageNames = ['paintImageXObject', 'paintInlineImageXObject', 'paintImageMaskXObject', 'paintImageXObjectRepeat', 'paintSolidColorImageMask'];
+    const vectorNames = ['constructPath', 'stroke', 'closeStroke', 'fill', 'eoFill', 'fillStroke', 'eoFillStroke', 'shadingFill'];
+    const imageIds = new Set(imageNames.map(name => ops[name]).filter(Number.isInteger));
+    const vectorIds = new Set(vectorNames.map(name => ops[name]).filter(Number.isInteger));
+    let rasterImageOps = 0, vectorPaintOps = 0;
+    for (const op of list.fnArray || []) {
+      if (imageIds.has(op)) rasterImageOps++;
+      if (vectorIds.has(op)) vectorPaintOps++;
+    }
+    return { rasterImageOps, vectorPaintOps, operatorListUnavailable: false };
+  } catch {
+    return { rasterImageOps: 0, vectorPaintOps: 0, operatorListUnavailable: true };
+  }
+}
+
+function buildPageModel(page, content, annotations, operatorMetrics = { operatorListUnavailable: true }) {
   const viewport = page.getViewport({ scale: 1 });
   const items = [];
   for (const item of content.items) {
@@ -166,9 +188,11 @@ function buildPageModel(page, content, annotations) {
     line.y = line.items.reduce((sum, it) => sum + it.y, 0) / line.items.length;
   }
   const paragraphs = [];
+  let wideGapLineCount = 0;
   let previousY = null;
   for (const line of lines) {
     line.items.sort((a, b) => a.x - b.x);
+    if (line.items.some((item, index) => index > 0 && item.x - (line.items[index - 1].x + line.items[index - 1].width) > 45)) wideGapLineCount++;
     const runs = [];
     let previousEnd = null;
     for (const item of line.items) {
@@ -200,6 +224,16 @@ function buildPageModel(page, content, annotations) {
     textLength: paragraphs.reduce((sum, p) => sum + p.text.length, 0),
     confidence: paragraphs.length > 2 ? 0.7 : paragraphs.length ? 0.35 : 0,
     hasAnnotations: (annotations || []).length > 0,
+    metrics: {
+      ...operatorMetrics,
+      textLength: paragraphs.reduce((sum, p) => sum + p.text.length, 0),
+      textItemCount: items.length,
+      wideGapLineCount,
+      pageWidthPt: viewport.width,
+      pageHeightPt: viewport.height,
+      textVerticalSpan: paragraphs.length ? Math.max(...paragraphs.map(p => p.y + p.fontSize)) - Math.min(...paragraphs.map(p => p.y)) : 0,
+      maxTextRightPt: items.length ? Math.max(...items.map(item => item.x + item.width)) : 0,
+    },
   };
 }
 function median(values) {
@@ -253,7 +287,7 @@ function paragraphXml(p) {
     p.runs.map(runXml).join('') + '</w:p>';
 }
 function imageParagraph(image) {
-  const maxW = 6.5 * 914400, maxH = 9 * 914400, ratio = image.widthPx / image.heightPx;
+  const maxW = Math.max(1, image.pageWidthPt - 18) * 12700, maxH = Math.max(1, image.pageHeightPt - 18) * 12700, ratio = image.widthPx / image.heightPx;
   let width = maxW, height = width / ratio;
   if (height > maxH) { height = maxH; width = height * ratio; }
   const cx = Math.round(width), cy = Math.round(height), id = image.relationshipId;
@@ -267,31 +301,36 @@ function imageParagraph(image) {
     '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + cx + '" cy="' + cy + '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>' +
     '</a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>';
 }
-function documentXml(model, images) {
+function sectionProperties(page, nextPage = false) {
+  const pageW = twips(page.widthPt);
+  const pageH = twips(page.heightPt);
+  const orientation = pageW > pageH ? ' w:orient="landscape"' : '';
+  return '<w:sectPr>' + (nextPage ? '<w:type w:val="nextPage"/>' : '') +
+    '<w:pgSz w:w="' + pageW + '" w:h="' + pageH + '"' + orientation + '/>' +
+    '<w:pgMar w:top="180" w:right="180" w:bottom="180" w:left="180" w:header="0" w:footer="0" w:gutter="0"/>' +
+    '</w:sectPr>';
+}
+function documentXml(model, images, mode) {
   const body = [];
+  const imageByPage = new Map(images.map(image => [image.pageNumber, image]));
   model.pages.forEach((page, index) => {
-    if (!page.paragraphs.length) {
+    const image = imageByPage.get(page.number);
+    if (image) {
+      // One rendered page image replaces editable text for this source page;
+      // do not append a duplicate appendix after the reconstructed document.
+      body.push(imageParagraph({ ...image, pageWidthPt: page.widthPt, pageHeightPt: page.heightPt }));
+    } else if (!page.paragraphs.length) {
       body.push('<w:p><w:r><w:rPr><w:i/><w:color w:val="777777"/></w:rPr><w:t>[No extractable text on source page ' + page.number + ']</w:t></w:r></w:p>');
     } else {
       for (const p of page.paragraphs) body.push(paragraphXml(p));
     }
-    if (index < model.pages.length - 1) body.push('<w:p><w:r><w:br w:type="page"/></w:r></w:p>');
+
+    if (index < model.pages.length - 1) {
+      body.push('<w:p><w:pPr>' + sectionProperties(page, true) + '</w:pPr></w:p>');
+    } else {
+      body.push(sectionProperties(page, false));
+    }
   });
-  if (images.length) {
-    body.push('<w:p><w:r><w:br w:type="page"/></w:r></w:p>');
-    body.push('<w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>Visual reference appendix</w:t></w:r></w:p>');
-    body.push('<w:p><w:r><w:t>These rendered page images preserve source appearance. They are reference images, not editable text.</w:t></w:r></w:p>');
-    images.forEach((image, index) => {
-      body.push('<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>Original PDF page ' + image.pageNumber + '</w:t></w:r></w:p>');
-      body.push(imageParagraph(image));
-      if (index < images.length - 1) body.push('<w:p><w:r><w:br w:type="page"/></w:r></w:p>');
-    });
-  }
-  const firstPage = model.pages[0] || { widthPt: 612, heightPt: 792 };
-  const pageW = twips(firstPage.widthPt);
-  const pageH = twips(firstPage.heightPt);
-  const orientation = pageW > pageH ? ' w:orient="landscape"' : '';
-  body.push('<w:sectPr><w:pgSz w:w="' + pageW + '" w:h="' + pageH + '"' + orientation + '/><w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720" w:header="360" w:footer="360"/></w:sectPr>');
   return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>' +
     body.join('') + '</w:body></w:document>';
@@ -311,9 +350,15 @@ function contentTypes() {
     '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>' +
     '<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/></Types>';
 }
-async function buildDocx(model, includeAppendix, progress) {
+async function buildDocx(model, mode, progress) {
   const images = [];
-  if (includeAppendix) {
+  const pageRepresentations = model.pages.map(page => ({
+    page,
+    choice: choosePageRepresentation(mode, page.metrics),
+  }));
+  const pagesToRender = pageRepresentations.filter(item => item.choice.representation === 'image');
+
+  if (pagesToRender.length) {
     const task = pdfjsLib.getDocument({
       data: sourcePdfBytes.slice(),
       cMapUrl: new URL('./vendor/cmaps/', import.meta.url).href,
@@ -322,14 +367,16 @@ async function buildDocx(model, includeAppendix, progress) {
     try {
       const pdf = await task.promise;
       let imageBytes = 0;
-      for (let i = 0; i < model.pages.length; i++) {
-        progress(45 + Math.round(i * 45 / model.pages.length), 'Rendering visual reference page ' + (i + 1) + ' of ' + model.pages.length + ' locally…');
-        const page = await pdf.getPage(i + 1);
+      for (let i = 0; i < pagesToRender.length; i++) {
+        const { page: modelPage, choice } = pagesToRender[i];
+        progress(45 + Math.round(i * 45 / pagesToRender.length),
+          'Rendering source page ' + modelPage.number + ' of ' + model.pages.length + ' (' + choice.reason + ')…');
+        const page = await pdf.getPage(modelPage.number);
         try {
-          const rendered = await renderPageToPng(page, 110);
+          const rendered = await renderPageToPng(page, 144);
           imageBytes += rendered.blob.size;
-          if (imageBytes > MAX_OUTPUT_BYTES) throw new UserError('Visual reference images exceed the output budget. Disable the appendix and try again.');
-          images.push({ pageNumber: i + 1, ...rendered, relationshipId: 'rIdImage' + (i + 1) });
+          if (imageBytes > MAX_OUTPUT_BYTES) throw new UserError('Rendered page images exceed the output budget. Try a smaller PDF.');
+          images.push({ pageNumber: modelPage.number, ...rendered, relationshipId: 'rIdImage' + modelPage.number });
         } finally {
           page.cleanup();
         }
@@ -341,7 +388,7 @@ async function buildDocx(model, includeAppendix, progress) {
   const entries = [
     { name: '[Content_Types].xml', data: encoder.encode(contentTypes()) },
     { name: '_rels/.rels', data: encoder.encode(ROOT_RELS) },
-    { name: 'word/document.xml', data: encoder.encode(documentXml(model, images)) },
+    { name: 'word/document.xml', data: encoder.encode(documentXml(model, images, mode)) },
     { name: 'word/styles.xml', data: encoder.encode(STYLES_XML) },
     { name: 'word/settings.xml', data: encoder.encode(SETTINGS_XML) },
   ];
@@ -354,7 +401,7 @@ async function buildDocx(model, includeAppendix, progress) {
   }
   rels.push('</Relationships>');
   entries.push({ name: 'word/_rels/document.xml.rels', data: encoder.encode(rels.join('')) });
-  progress(93, 'Packaging the editable document and visual reference appendix…');
+  progress(93, 'Packaging one output page per source page…');
   return zipStore(entries);
 }
 async function renderPageToPng(page, dpi = 110) {

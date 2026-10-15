@@ -25,3 +25,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 progress { width: 100%; }
 #status { text-align: center; min-height: 1.5em; margin: 0; }
 #status.error { color: var(--err); }
+
+.mode-option { display: block; font-weight: 600; margin-bottom: 0.4rem; }
+select { width: 100%; padding: 0.8rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--fg); font: inherit; }
+.mode-help { margin-top: 0.65rem; text-align: left; }

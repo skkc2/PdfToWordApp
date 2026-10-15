@@ -4,6 +4,7 @@ const CORE_ASSETS = [
   './index.html',
   './styles.css?v=__APP_VERSION__',
   './app.js?v=__APP_VERSION__',
+  './conversion-layout.mjs',
   './vendor/pdf.min.mjs',
   './vendor/pdf.worker.min.mjs',
   './vendor/LICENSE',
