@@ -22,7 +22,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -32,7 +32,7 @@ jobs:
       - name: Fetch pinned pdf.js (no install scripts)
         run: |
           set -euo pipefail
-          PDFJS_VERSION=4.10.38
+          PDFJS_VERSION=6.4.299
           mkdir "$RUNNER_TEMP/pdfjs"
           cd "$RUNNER_TEMP/pdfjs"
           npm init -y > /dev/null
@@ -44,10 +44,15 @@ jobs:
           set -euo pipefail
           SRC="$RUNNER_TEMP/pdfjs/node_modules/pdfjs-dist"
           mkdir -p site/vendor
-          cp web/index.html web/app.js web/styles.css web/service-worker.js web/conversion-layout.mjs site/
+          cp web/index.html web/app.js web/styles.css web/service-worker.js web/docx-layout.mjs site/
           cp "$SRC/legacy/build/pdf.min.mjs" "$SRC/legacy/build/pdf.worker.min.mjs" site/vendor/
           cp -r "$SRC/cmaps" site/vendor/cmaps
+          cp -r "$SRC/standard_fonts" site/vendor/standard_fonts
+          cp -r "$SRC/wasm" site/vendor/wasm
+          cp -r "$SRC/iccs" site/vendor/iccs
           cp "$SRC/LICENSE" site/vendor/LICENSE
+          # Precache all local PDF.js support files so rendering works offline after install.
+          python3 -c "import os,json; roots=['vendor/cmaps','vendor/standard_fonts','vendor/wasm','vendor/iccs']; print(json.dumps(['./'+os.path.relpath(os.path.join(path,name),'site') for root in roots for path,_,files in os.walk('site/'+root) for name in files]))" > site/offline-assets.json
           # Use a unique cache namespace and asset URLs for every deployed revision.
           sed -i "s/__APP_VERSION__/${GITHUB_SHA}/g" site/index.html site/service-worker.js
 
@@ -56,15 +61,29 @@ jobs:
           set -euo pipefail
           node --check site/app.js
           node --check site/service-worker.js
-          node --check site/conversion-layout.mjs
-          node --test web/tests/conversion-layout.test.mjs
+          node --check site/docx-layout.mjs
+          node --test web/tests/docx-layout.test.mjs
+
+      - name: Browser conversion integration test
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/browser-test"
+          cd "$RUNNER_TEMP/browser-test"
+          npm init -y > /dev/null
+          npm install --ignore-scripts --no-audit --no-fund --save-exact playwright@1.55.0 pngjs@7.0.0
+          PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/ms-playwright" npx playwright install --with-deps chromium
+          cd "$GITHUB_WORKSPACE"
+          NODE_PATH="$RUNNER_TEMP/browser-test/node_modules" \
+          PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/ms-playwright" \
+          SITE_DIR="$GITHUB_WORKSPACE/site" \
+            node web/tests/browser-conversion.cjs
 
       - name: Safety checks and file fingerprints
         run: |
           set -euo pipefail
           grep -q "Content-Security-Policy" site/index.html
           test -f site/service-worker.js
-          test -f site/conversion-layout.mjs
+          test -f site/docx-layout.mjs
           grep -q "serviceWorker.register" site/app.js
           grep -q "pdftoword-offline-${GITHUB_SHA}" site/service-worker.js
           grep -q "app.js?v=${GITHUB_SHA}" site/index.html
