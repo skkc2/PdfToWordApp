@@ -401,7 +401,8 @@ function buildPageModel(page, content, annotations, operatorInfo) {
 
   const textLength = textItems.reduce((sum, item) => sum + item.text.length, 0);
   let fallbackReason = '';
-  if (operatorInfo.hasTextClipping) fallbackReason = 'text used as a clipping path';
+  if (page.rotate && page.rotate % 360 !== 0) fallbackReason = 'rotated PDF page';
+  else if (operatorInfo.hasTextClipping) fallbackReason = 'text used as a clipping path';
   else if (operatorInfo.rasterImageOps > 0 && operatorInfo.invisibleTextOpCount > 0) fallbackReason = 'a scanned page has an invisible OCR layer';
   else if (hasUnsupportedTextTransform) fallbackReason = 'rotated, skewed, or right-to-left text';
   else if (operatorInfo.textPaintRecords.length > 0 && sourceItems.length === 0) fallbackReason = 'PDF.js could not map drawn text to editable text items';
