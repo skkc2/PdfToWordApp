@@ -107,7 +107,9 @@ async function extractPages(file) {
     for (let p = 1; p <= total; p++) {
       const page = await pdf.getPage(p);
       const content = await page.getTextContent();
-      const lines = itemsToLines(content.items);
+      let annots = [];
+      try { annots = await page.getAnnotations(); } catch (e) { annots = []; }
+      const lines = itemsToLines(content.items, annots);
       page.cleanup();
       for (const line of lines) totalChars += line.length;
       if (totalChars > MAX_TOTAL_CHARS) {
@@ -123,29 +125,49 @@ async function extractPages(file) {
   return pages;
 }
 
-function itemsToLines(items) {
-  const lines = [];
-  let cur = '';
-  let lastY = null;
+function itemsToLines(items, annotations) {
+  const pieces = [];
   for (const it of items) {
-    if (typeof it.str !== 'string') continue;
-    const y = it.transform ? it.transform[5] : 0;
-    if (lastY !== null && Math.abs(y - lastY) > 2 && cur) {
+    if (typeof it.str !== 'string' || it.str === '' || !it.transform) continue;
+    pieces.push({ x: it.transform[4], y: it.transform[5], s: it.str, w: it.width || 0 });
+  }
+  for (const a of annotations || []) {
+    if (a.subtype !== 'Widget' || !a.rect || a.fieldType === 'Btn') continue;
+    let v = a.fieldValue;
+    if (Array.isArray(v)) v = v.join(', ');
+    if (typeof v !== 'string') continue;
+    const rows = v.split(/\r\n|\r|\n/).map((s) => s.trim()).filter((s) => s.length > 0);
+    const top = Math.max(a.rect[1], a.rect[3]);
+    const bottom = Math.min(a.rect[1], a.rect[3]);
+    const left = Math.min(a.rect[0], a.rect[2]);
+    rows.forEach((row, i) => {
+      const y = rows.length === 1 ? (top + bottom) / 2 - 4 : top - 10 - i * 12;
+      pieces.push({ x: left, y: y, s: row, w: row.length * 5 });
+    });
+  }
+  pieces.sort((a, b) => (b.y - a.y) || (a.x - b.x));
+  const lines = [];
+  let cur = null;
+  for (const p of pieces) {
+    if (cur && Math.abs(p.y - cur.y) <= 3) {
+      cur.parts.push(p);
+    } else {
+      cur = { y: p.y, parts: [p] };
       lines.push(cur);
-      cur = '';
-    }
-    cur += it.str;
-    lastY = y;
-    if (it.hasEOL) {
-      lines.push(cur);
-      cur = '';
-      lastY = null;
     }
   }
-  if (cur) lines.push(cur);
-  return lines.map((s) => s.trim()).filter((s) => s.length > 0);
+  return lines.map((l) => {
+    l.parts.sort((a, b) => a.x - b.x);
+    let out = '';
+    let end = null;
+    for (const p of l.parts) {
+      if (end !== null && p.x - end > 1.5 && !/\s$/.test(out) && !/^\s/.test(p.s)) out += ' ';
+      out += p.s;
+      end = p.x + p.w;
+    }
+    return out.replace(/\s+/g, ' ').trim();
+  }).filter((s) => s.length > 0);
 }
-
 /* ---------- .docx writing (plain OpenXML in an uncompressed ZIP) ---------- */
 
 function sanitizeXmlChars(input) {
