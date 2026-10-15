@@ -52,7 +52,7 @@ jobs:
           cp -r "$SRC/iccs" site/vendor/iccs
           cp "$SRC/LICENSE" site/vendor/LICENSE
           # Precache all local PDF.js support files so rendering works offline after install.
-          python3 -c "import os,json; roots=['vendor/cmaps','vendor/standard_fonts','vendor/wasm','vendor/iccs']; print(json.dumps(['./'+os.path.join(root,name) for root in roots for path,_,files in os.walk('site/'+root) for name in files]))" > site/offline-assets.json
+          python3 -c "import os,json; roots=['vendor/cmaps','vendor/standard_fonts','vendor/wasm','vendor/iccs']; print(json.dumps(['./'+os.path.relpath(os.path.join(path,name),'site') for root in roots for path,_,files in os.walk('site/'+root) for name in files]))" > site/offline-assets.json
           # Use a unique cache namespace and asset URLs for every deployed revision.
           sed -i "s/__APP_VERSION__/${GITHUB_SHA}/g" site/index.html site/service-worker.js
 
