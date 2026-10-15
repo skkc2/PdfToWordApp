@@ -111,8 +111,8 @@ async function analyzePdf(file) {
   } finally {
     await task.destroy();
   }
-  if (!pages.some(p => p.paragraphs.some(line => line.text.trim()))) {
-    throw new UserError('No selectable text was found. This appears to be a scanned or image-only PDF. OCR is not included yet; use the visual appendix to preserve its appearance.');
+  if (!pages.some(p => p.paragraphs.some(line => line.text.trim())) && !visualAppendixInput.checked) {
+    throw new UserError('No selectable text was found. This appears to be a scanned or image-only PDF. Enable the visual reference appendix to preserve its appearance; OCR is not included yet.');
   }
   return { pages };
 }
@@ -281,7 +281,11 @@ function documentXml(model, images) {
       if (index < images.length - 1) body.push('<w:p><w:r><w:br w:type="page"/></w:r></w:p>');
     });
   }
-  body.push('<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720" w:header="360" w:footer="360"/></w:sectPr>');
+  const firstPage = model.pages[0] || { widthPt: 612, heightPt: 792 };
+  const pageW = twips(firstPage.widthPt);
+  const pageH = twips(firstPage.heightPt);
+  const orientation = pageW > pageH ? ' w:orient="landscape"' : '';
+  body.push('<w:sectPr><w:pgSz w:w="' + pageW + '" w:h="' + pageH + '"' + orientation + '/><w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720" w:header="360" w:footer="360"/></w:sectPr>');
   return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>' +
     body.join('') + '</w:body></w:document>';
