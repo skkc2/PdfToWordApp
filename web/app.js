@@ -52,7 +52,7 @@ convertBtn.addEventListener('click', async () => {
     });
     if (blob.size > MAX_OUTPUT_BYTES) throw new UserError('The Word file exceeds the 180 MB safety limit. Disable the visual appendix and try again.');
     saveBlob(blob, outputName(file.name));
-    setStatus('Done. Your editable Word document was downloaded locally.');
+    setStatus('Done. Your Word document was downloaded locally.');
   } catch (error) {
     setStatus(friendlyMessage(error), true);
   } finally {
