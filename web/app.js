@@ -419,3 +419,18 @@ function saveBlob(blob, filename) {
   document.body.appendChild(anchor); anchor.click(); anchor.remove();
   setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
+
+const offlineStatusEl = document.getElementById('offline-status');
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  navigator.serviceWorker.register(new URL('./service-worker.js', import.meta.url), { scope: './' })
+    .then(async registration => {
+      await navigator.serviceWorker.ready;
+      if (offlineStatusEl) offlineStatusEl.textContent = 'Offline app shell cached. PDF conversion runs locally; assets first used online are cached for later offline use.';
+      registration.update().catch(() => {});
+    })
+    .catch(() => {
+      if (offlineStatusEl) offlineStatusEl.textContent = 'Offline caching is unavailable in this browser/session. Conversion still runs locally while the app is loaded.';
+    });
+} else if (offlineStatusEl) {
+  offlineStatusEl.textContent = 'Service workers are unavailable here. Conversion still runs locally while the app is loaded.';
+}
