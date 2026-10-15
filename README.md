@@ -11,16 +11,14 @@ There are two versions, built from this repo:
 
 Web app: https://skkc2.github.io/PdfToWordApp/
 
-## What it does
+## Web converter: hybrid reconstruction
 
-- Extracts the **text** from a PDF and writes it into a plain `.docx`, one paragraph per line, with a page break between pages.
-- Works offline once loaded.
+- Extracts positioned PDF.js text and reconstructs editable Word paragraphs and text runs, with approximate font family, size, bold/italic, indentation, and vertical spacing.
+- Preserves page order and page breaks. It keeps the source PDF in browser memory for optional page rendering.
+- Optional **visual reference appendix** renders each source page to an image and appends it after the editable reconstruction. These appendix images preserve appearance but are not editable text.
+- Includes a same-origin service worker to cache the application shell and locally requested assets for offline use after the site has loaded.
 
-## What it does not do
-
-- It does **not** keep images, tables, fonts, columns or layout.
-- Scanned PDFs with no text layer come out empty (there is no OCR).
-- Password-protected PDFs are rejected.
+This is a reconstruction, not a pixel-perfect PDF-to-Word engine. Tables, multi-column reading order, vector shapes, original images, headers/footers, exact colors and complex typography are not yet reconstructed as native Word objects. The visual appendix is the fidelity fallback. Scanned PDFs without a text layer cannot produce editable text because OCR is not included. Password-protected PDFs are rejected.
 
 ## Limits (both versions)
 
@@ -43,6 +41,7 @@ These limits reduce the risk of crashes from huge or malicious files.
 - A Content-Security-Policy restricts the page to its own origin. All code is in separate files, with no inline scripts.
 - The PDF engine ([pdf.js](https://github.com/mozilla/pdf.js), version 4.10.38, legacy build) is fetched during the build and served from this same site, not from a third-party CDN.
 - The build fails if `app.js` contains network calls (`fetch`, `XMLHttpRequest`, `WebSocket`, `sendBeacon`) or if `index.html` references an external resource.
+- The service worker caches same-origin application assets. PDF bytes are read from the selected local file and are not sent to any endpoint. Assets not requested before going offline may not yet be cached; reload once while online for the initial shell cache to be installed.
 
 **Build pipeline**
 - GitHub Actions run with read-only tokens, no stored credentials, and no secrets.
@@ -56,6 +55,7 @@ build_pdf_to_word_app.py        Generates the whole Android project
 web/index.html                  Web app page
 web/app.js                      Web app logic (PDF reading + .docx writing)
 web/styles.css                  Web app styling
+web/service-worker.js            Browser-only offline app-shell cache
 .github/workflows/build-apk.yml Builds, tests and checks the APK
 .github/workflows/pages.yml     Builds and deploys the web app
 ```
@@ -92,11 +92,13 @@ One-time setup for the web app: Settings → Pages → Source: **GitHub Actions*
 ## Tech
 
 - Android: Kotlin, AndroidX, PDFBox-Android 2.0.27.0, Gradle 8.10.2, JDK 17, minSdk 24
-- Web: plain JavaScript, pdf.js 4.10.38, a small hand-written ZIP/OpenXML writer
+- Web: plain JavaScript, pdf.js 4.10.38, a hand-written ZIP/OpenXML writer with editable text runs, styles, image relationships and an optional visual reference appendix
 
-## Known issues
+## Known limitations
 
-- Web app: conversion currently fails with a generic error for at least one test PDF. This is being investigated.
+- Layout reconstruction is heuristic; multi-column pages can have incorrect reading order, and tables are not yet emitted as native Word tables.
+- The optional visual appendix is appended after the editable reconstruction rather than interleaved page-by-page.
+- Scanned PDFs need a future browser-bundled OCR stage for editable text.
 - PDFBox-Android 2.0.27.0 is older. Check for newer releases from time to time.
 - Pages actions are pinned to version tags, not commit SHAs.
 
