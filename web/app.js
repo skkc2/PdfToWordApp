@@ -358,10 +358,22 @@ async function renderPageToPng(page, dpi = 110) {
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.ceil(viewport.width));
   canvas.height = Math.max(1, Math.ceil(viewport.height));
+  const canvasContext = canvas.getContext('2d', { alpha: false });
+  if (!canvasContext) throw new UserError('Your browser could not create a canvas for the visual appendix. Try another browser or disable the appendix.');
   try {
-    await page.render({ canvas, viewport }).promise;
-    const blob = await new Promise((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error('Image encoding failed')), 'image/png'));
+    await page.render({ canvasContext, viewport }).promise;
+    const blob = await new Promise((resolve, reject) => {
+      canvas.toBlob(
+        value => value ? resolve(value) : reject(new UserError('The browser could not encode a rendered PDF page as PNG. Try a smaller PDF or disable the visual appendix.')),
+        'image/png'
+      );
+    });
     return { blob, widthPx: canvas.width, heightPx: canvas.height };
+  } catch (error) {
+    if (error instanceof UserError) throw error;
+    if (error?.name === 'RenderingCancelledException') throw error;
+    if (error?.name === 'PasswordException') throw new UserError('The PDF became unavailable while rendering the visual appendix.');
+    throw new UserError('Could not render PDF page locally for the visual appendix. Try a smaller PDF, or disable the appendix. Details: ' + String(error?.message || error).slice(0, 180));
   } finally {
     canvas.width = 0;
     canvas.height = 0;
